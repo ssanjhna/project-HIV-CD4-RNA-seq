@@ -1,0 +1,37 @@
+run_accession	experiment_accession	experiment_title	fastq_ftp
+SRR5209817	SRX2523332	Illumina HiSeq 2500 sequencing: GSM2471094: CM_PMA_Ionomycin Sample 1 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/007/SRR5209817/SRR5209817.fastq.gz
+SRR5209822	SRX2523337	Illumina HiSeq 2500 sequencing: GSM2471099: TM_Unstimulated Control Sample 6 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/002/SRR5209822/SRR5209822.fastq.gz
+SRR5209825	SRX2523340	Illumina HiSeq 2500 sequencing: GSM2471102: EM_PMA_Ionomycin Sample 9 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/005/SRR5209825/SRR5209825.fastq.gz
+SRR5209827	SRX2523342	Illumina HiSeq 2500 sequencing: GSM2471104: EM_Bryostatin Sample 11 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/007/SRR5209827/SRR5209827.fastq.gz
+SRR5209828	SRX2523343	Illumina HiSeq 2500 sequencing: GSM2471105: EM_IL15 Sample 12 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/008/SRR5209828/SRR5209828.fastq.gz
+SRR5209829	SRX2523344	Illumina HiSeq 2500 sequencing: GSM2471106: CM_PMA_Ionomycin Sample 13 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/009/SRR5209829/SRR5209829.fastq.gz
+SRR5209830	SRX2523345	Illumina HiSeq 2500 sequencing: GSM2471107: CM_Unstimulated Control Sample 14 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/000/SRR5209830/SRR5209830.fastq.gz
+SRR5209833	SRX2523348	Illumina HiSeq 2500 sequencing: GSM2471110: TM_PMA_Ionomycin Sample 17 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/003/SRR5209833/SRR5209833.fastq.gz
+SRR5209838	SRX2523353	Illumina HiSeq 2500 sequencing: GSM2471115: EM_Unstimulated Control Sample 22 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/008/SRR5209838/SRR5209838.fastq.gz
+SRR5209839	SRX2523354	Illumina HiSeq 2500 sequencing: GSM2471116: EM_Bryostatin Sample 23 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/009/SRR5209839/SRR5209839.fastq.gz
+SRR5209841	SRX2523356	Illumina HiSeq 2500 sequencing: GSM2471118: CM_PMA_Ionomycin Sample 25 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/001/SRR5209841/SRR5209841.fastq.gz
+SRR5209843	SRX2523358	Illumina HiSeq 2500 sequencing: GSM2471120: CM_Bryostatin Sample 27 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/003/SRR5209843/SRR5209843.fastq.gz
+SRR5209845	SRX2523360	Illumina HiSeq 2500 sequencing: GSM2471122: TM_PMA_Ionomycin Sample 29 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/005/SRR5209845/SRR5209845.fastq.gz
+SRR5209848	SRX2523363	Illumina HiSeq 2500 sequencing: GSM2471125: TM_IL15 Sample 32 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/008/SRR5209848/SRR5209848.fastq.gz
+SRR5209849	SRX2523364	Illumina HiSeq 2500 sequencing: GSM2471126: EM_PMA_Ionomycin Sample 33 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/009/SRR5209849/SRR5209849.fastq.gz
+SRR5209851	SRX2523366	Illumina HiSeq 2500 sequencing: GSM2471128: EM_Bryostatin Sample 35 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/001/SRR5209851/SRR5209851.fastq.gz
+SRR5209818	SRX2523333	Illumina HiSeq 2500 sequencing: GSM2471095: CM_Unstimulated Control Sample 2 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/008/SRR5209818/SRR5209818.fastq.gz
+SRR5209819	SRX2523334	Illumina HiSeq 2500 sequencing: GSM2471096: CM_Bryostatin Sample 3 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/009/SRR5209819/SRR5209819.fastq.gz
+SRR5209820	SRX2523335	Illumina HiSeq 2500 sequencing: GSM2471097: CM_IL15 Sample 4 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/000/SRR5209820/SRR5209820.fastq.gz
+SRR5209821	SRX2523336	Illumina HiSeq 2500 sequencing: GSM2471098: TM_PMA_Ionomycin Sample 5 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/001/SRR5209821/SRR5209821.fastq.gz
+SRR5209823	SRX2523338	Illumina HiSeq 2500 sequencing: GSM2471100: TM_Bryostatin Sample 7 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/003/SRR5209823/SRR5209823.fastq.gz
+SRR5209824	SRX2523339	Illumina HiSeq 2500 sequencing: GSM2471101: TM_IL15 Sample 8 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/004/SRR5209824/SRR5209824.fastq.gz
+SRR5209826	SRX2523341	Illumina HiSeq 2500 sequencing: GSM2471103: EM_Unstimulated Control Sample 10 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/006/SRR5209826/SRR5209826.fastq.gz
+SRR5209832	SRX2523347	Illumina HiSeq 2500 sequencing: GSM2471109: CM_IL15 Sample 16 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/002/SRR5209832/SRR5209832.fastq.gz
+SRR5209834	SRX2523349	Illumina HiSeq 2500 sequencing: GSM2471111: TM_Unstimulated Control Sample 18 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/004/SRR5209834/SRR5209834.fastq.gz
+SRR5209835	SRX2523350	Illumina HiSeq 2500 sequencing: GSM2471112: TM_Bryostatin Sample 19 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/005/SRR5209835/SRR5209835.fastq.gz
+SRR5209836	SRX2523351	Illumina HiSeq 2500 sequencing: GSM2471113: TM_IL15 Sample 20 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/006/SRR5209836/SRR5209836.fastq.gz
+SRR5209837	SRX2523352	Illumina HiSeq 2500 sequencing: GSM2471114: EM_PMA_Ionomycin Sample 21 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/007/SRR5209837/SRR5209837.fastq.gz
+SRR5209846	SRX2523361	Illumina HiSeq 2500 sequencing: GSM2471123: TM_Unstimulated Control Sample 30 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/006/SRR5209846/SRR5209846.fastq.gz
+SRR5209847	SRX2523362	Illumina HiSeq 2500 sequencing: GSM2471124: TM_Bryostatin Sample 31 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/007/SRR5209847/SRR5209847.fastq.gz
+SRR5209850	SRX2523365	Illumina HiSeq 2500 sequencing: GSM2471127: EM_Unstimulated Control Sample 34 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/000/SRR5209850/SRR5209850.fastq.gz
+SRR5209831	SRX2523346	Illumina HiSeq 2500 sequencing: GSM2471108: CM_Bryostatin Sample 15 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/001/SRR5209831/SRR5209831.fastq.gz
+SRR5209840	SRX2523355	Illumina HiSeq 2500 sequencing: GSM2471117: EM_IL15 Sample 24 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/000/SRR5209840/SRR5209840.fastq.gz
+SRR5209842	SRX2523357	Illumina HiSeq 2500 sequencing: GSM2471119: CM_Unstimulated Control Sample 26 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/002/SRR5209842/SRR5209842.fastq.gz
+SRR5209844	SRX2523359	Illumina HiSeq 2500 sequencing: GSM2471121: CM_IL15 Sample 28 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/004/SRR5209844/SRR5209844.fastq.gz
+SRR5209852	SRX2523367	Illumina HiSeq 2500 sequencing: GSM2471129: EM_IL15 Sample 36 Homo sapiens RNA-Seq	ftp.sra.ebi.ac.uk/vol1/fastq/SRR520/002/SRR5209852/SRR5209852.fastq.gz
