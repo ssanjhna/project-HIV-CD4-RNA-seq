@@ -25,3 +25,6 @@ DESeq2results_AllConditions.zip contains the raw tables of genes that are signif
 
 Go_txt.zip contains the results of Gene Ontology (GO) enrichment analysis (see .R file for code generating these .txt files) for genes that are differentially expressed in each condition.
 
+Project_DEG_Analysis_script.R contains the R script for the DESeq2 object generation, normalisation and plot generation.
+
+Project-FinalReport.Rmd and Project-FinalReport.html contain the full analysis pipeline and summarisation of results.
