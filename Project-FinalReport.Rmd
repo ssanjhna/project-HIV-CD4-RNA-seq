@@ -1,0 +1,1515 @@
+---
+title: "ANGSD Final Project"
+author: "Sanjhna Saravanan"
+date: "2026-04-15"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(fig.width = 9, fig.height = 9)
+```
+
+# Introduction
+
+## Background
+
+In people living with HIV (PLWH), HIV cannot be cured due to the proviral integration into the human genome of CD4+ T cells residing in a latent state. Whilst most CD4 T cells do not produce active virions, some cells may continuously have low levels of baseline transcription. In the absence of antiretroviral therapy (ART) infected CD4 cells can reactivate and resume virion production. One proposed strategy to eliminate the latent reservoir is the "shock and kill" approach whereby latently infected cells are reactivated with latency reversal agents (LRAs). These chemicals have been tested in clinical trials with some reducing the reservoir size but not eradicating the reservoir. Many LRAs work by directly or indirectly activating transcription factors such as NF-kB or NFAT that bind the HIV LTR [1].
+
+PMA is a well known LRA that acts through protein kinase-C as an agonist mimicking diacylglycerol, activating PKC in conjunction with Ca+ in conventional PKCs. Ionomyicn is a Calcium ionophore that increases intracellular Ca+. When combined, PKCs are activated with downstream activation of NF-kB and thus latent genomic HIV. Although PMA/Ionomycin is a potent and effective LRA, it is not considered a suitable candidate for clinical trials because of its tumour-promoting properties. It has however been used extensively in in vitro HIV research to study HIV transcriptional effects [1]. Bryostatin is another PKC agonist with a different binding profile to PMA without the oncogenic effects of PMA and has been evaluated as a suitable anti-cancer drug. Bryostatin has a more modest effect on HIV reactivation [3]. IL15 works differently to PMA and Bryostatin, instead through signalling of the JAK and STAT5 pathway by mimicking cytokine signals that a T cell might encounter. IL-15 is thought to have the potential to act as both a shocking and killing effect on target cells through promotion of CD8+ T cells and by increasing activation of CD8 and NK cells resulting in greater IFN-y and TNF-a. The induction of STAT5 by IL15 is thought to drive CD4 proliferation and could help the outgrowth of latently infected CD4 t-cell clones [4].
+There are several other LRAs studied in the literature however for the purposes of this project, I have focused on the aforementioned LRAs that Kulpa et al used in their RNA-Seq 2019 study.
+
+Previously in Dr Guinevere Lee's lab, it was found that gene expression in latent CD4+ HIV-1 infected T-cells was significantly altered between unstimulated cells and with LRAs like Romidepsin and CD3/CD28, particularly with human STAT5B-HIV chimeric transcripts forming. Here, I want to investigate how other LRAs like Bryostatin and IL-15 would impact gene expression (DGE analysis) in CD4 cells and if STAT5B is differentially up or downregulated in with LRAs.
+
+I hypothesise that stimulation of latent HIV-1–infected CD4⁺ T cells with PMA/Ionomycin, Bryostatin or IL-15 will induce distinct differential gene expression patterns, with IL-15 particularly preferentially upregulating STAT5B through the JAK pathway, and that this enhanced STAT5B activity will correlate with the formation of STAT5B–HIV chimeric transcripts.
+
+## Data Generation and Details
+
+The dataset used in this study is from Kulpa et al. 2019 JVI study (DOI: 10.1128/jvi.00969-19; GEO accession: GSE94152), generated at Case Western Reserve University in 2018. The study profiled CD4⁺ T cells from HIV-1–infected individuals on long-term suppressive antiretroviral therapy (ART), focusing on cells harbouring latent viral reservoirs[2].
+
+Peripheral blood mononuclear cells (PBMCs) were isolated and memory CD4⁺ T cells were sorted by flow cytometry into central memory (TCM), transitional memory (TM), and effector memory (TEM) subsets. Cells were maintained under ART in vitro to prevent viral spread and were either left unstimulated or treated with latency-reversing agents (LRAs), including PMA/ionomycin, bryostatin, and IL-15. Inducible reservoir size was assessed by quantifying HIV multiply spliced RNA (msRNA)[2].
+
+RNA was extracted using the Qiagen RNeasy Micro Kit, and libraries were prepared with the Clontech SMARTer Ultra Low Input RNA Kit which uses oligo dT pulldown of transcripts. Sequencing was performed on the Illumina HiSeq 2500 platform [2]. Although both 50 bp and 100 bp reads are reported in the original study, the subset of LRA-treated samples analysed here consists of 100 bp single-end reads.
+
+Samples were derived from four donors. For this analysis, only the effector memory (TEM) subset was examined, as this population showed the most pronounced differential expression patterns in the original study, making it particularly relevant for investigating transcriptional responses to latency reversal.
+
+# Methods
+
+## Downloading files
+
+### Metadata CSV Accession Extraction
+
+I obtained RNA-seq data from the European Nucleotide Archive (ENA) using the accession ID PRJNA369087, specifically selecting the successfully HIV-treated, single-end files. The associated metadata CSV was downloaded from ENA.
+
+```{bash, eval=FALSE, label="get metadata tsv"}
+wget -O ENA_metadata.tsv 'https://www.ebi.ac.uk/ena/portal/api/filereport?accession=PRJNA369087&result=read_run&fields=experiment_accession,run_accession,experiment_title,fastq_ftp&format=tsv&download=true&limit=0'
+```
+
+I extracted the run_accession IDs based on if the experiment-title column had "EM" (effector memory) in the entry and extracted the IDs with the associated fastq_ftp to a new file.
+
+```{bash, eval=FALSE, label="extract_EM_links"}
+awk -F'\t' 'NR==1 {for(i=1;i<=NF;i++){if($i=="run_accession") ra=i; if($i=="experiment_title") et=i; if($i=="fastq_ftp") fq=i}} NR>1 && $et ~ /EM/ {print $ra "\t" $fq}' ENA_metadata.tsv > EM_links.tsv
+```
+
+```{bash, eval=FALSE, label="download fastqs"}
+while IFS=$'\t' read -r acc url; do
+  if [[ "$acc" != "run_accession" && -n "$url" ]]; then
+    echo "Downloading $acc..."
+    wget -c "$url" -O "${acc}.fastq.gz"
+  fi
+done < EM_links.tsv
+```
+
+Files downloaded = 4 donors x 3 conditions x 1 cd4+ cell compartment (EM) = 12 single-end fastq files total.
+
+### Number of reads in each fastq
+
+```{bash, label="Count Lines", eval=FALSE}
+for f in *.fastq.gz; do
+  lines=$(zcat "$f" | wc -l)
+  reads=$((lines / 4))
+  echo "$f: $reads"
+done
+```
+
+```{}
+SRR5209825.fastq.gz: 8029048
+SRR5209826.fastq.gz: 8379396
+SRR5209827.fastq.gz: 8020602
+SRR5209828.fastq.gz: 11654715
+SRR5209837.fastq.gz: 9039280
+SRR5209838.fastq.gz: 9766621
+SRR5209839.fastq.gz: 8292522
+SRR5209840.fastq.gz: 7918898
+SRR5209849.fastq.gz: 8352312
+SRR5209850.fastq.gz: 8939546
+SRR5209851.fastq.gz: 8264256
+SRR5209852.fastq.gz: 7573247
+```
+
+### Renaming SRR Accession Numbers to Descriptive Names
+
+I then renamed the SRR accession numbers to more descriptive names with the below script:
+
+```{bash, eval=FALSE, label="rename files"}
+#!/bin/bash
+
+tsv="/athena/angsd/scratch/sas4096/project/ENA_metadata.tsv"
+
+folders=(
+    "/athena/angsd/scratch/sas4096/project/FASTQ/trimmed"
+    "/athena/angsd/scratch/sas4096/project/star_alignment/aligned"
+    "/athena/angsd/scratch/sas4096/project/FASTQ/original_fastqs"
+)
+
+declare -A map
+while IFS=$'\t' read -r run_accession experiment_accession experiment_title fastq_ftp; do
+    [[ "$run_accession" == "run_accession" ]] && continue
+    # Extract clean sample name: after second colon, remove 'Homo sapiens RNA-Seq', replace spaces with underscores
+    sample_name=$(echo "$experiment_title" | awk -F': ' '{print $3}' | sed 's/ Homo sapiens RNA-Seq//g' | tr ' ' '_')
+    map["$run_accession"]="$sample_name"
+done < "$tsv"
+
+echo "Renaming Files"
+for dir in "${folders[@]}"; do
+    for f in "$dir"/SRR*; do
+        filename=$(basename "$f")
+        # extract SRR ID at start of filename
+        run=$(echo "$filename" | grep -o '^SRR[0-9]\+')
+        if [ -n "$run" ] && [ -n "${map[$run]}" ]; then
+            new_file="$dir/${filename/$run/${map[$run]}}"
+            echo "Renaming: $f -> $new_file"
+            mv "$f" "$new_file"
+        else
+            echo "No mapping found for $filename"
+        fi
+    done
+done
+echo "DONE"
+```
+
+## QC
+
+### QC on Untrimmed Files
+
+Prior to trimming, I used fastqc on the files followed by multiqc.
+
+```{bash, eval=FALSE, label="fastqc before trimming"}
+module load fastqc/0.11.9
+fastqc -t 16 *.fastq.gz
+
+multiqc /athena/angsd/scratch/sas4096/project/FASTQ/original_fastqs/ -o multiqc_report
+```
+
+Initial FastQC analysis indicated overall high-quality sequencing data. The dataset comprised had 100 bp single-end reads. Per-base quality scores were consistently high, with mean Phred scores peaking around 37, indicating low sequencing error rates. There were no issues with tile quality, and per-base sequence content and GC distribution were within the expected range.
+
+The adapter content plot before trimming:
+
+![](fastqc_adapter_content_plot_pretrim.png)
+
+The adapter content plot prior to trimming showed minimal adapter contamination, with only a slight increase toward the 3′ end of reads. Overall, this suggests that adapter trimming would have a limited but appropriate effect on improving read quality.
+
+### Trimming
+
+I used the default parameters for trim-galore, adding quality = 20 to ensure all reads are of high quality, stringency=3 to stop trim-galore trimming excessively and length=20 to have a minimum read length. This command also runs fastqc automatically.
+
+```{bash, eval=FALSE, label="trimgalore"}
+trim_galore \
+  --quality 20 \
+  --stringency 3 \
+  --length 20 \
+  --cores 4 \
+  --fastqc \
+  --output_dir $OUTPUT_DIR \
+  $INPUT_DIR/*.fastq.gz
+```
+
+```{}
+SUMMARISING RUN PARAMETERS
+==========================
+Input filename: /athena/angsd/scratch/sas4096/project/FASTQ/original_fastqs/SRR5209826.fastq.gz
+Trimming mode: single-end
+Trim Galore version: 0.6.10
+Cutadapt version: 4.5
+Python version: could not detect
+Number of cores used for trimming: 4
+Quality Phred score cutoff: 20
+Quality encoding type selected: ASCII+33
+Using Nextera adapter for trimming (count: 24353). Second best hit was smallRNA (count: 1)
+Adapter sequence: 'CTGTCTCTTATA' (Nextera Transposase sequence; auto-detected)
+Maximum trimming error rate: 0.1 (default)
+Minimum required adapter overlap (stringency): 3 bp
+Minimum required sequence length before a sequence gets removed: 20 bp
+Running FastQC on the data once trimming has completed
+Output file will be GZIP compressed
+
+This is cutadapt 4.5 with Python 3.10.13
+Command line parameters: -j 4 -e 0.1 -q 20 -O 3 -a CTGTCTCTTATA /athena/angsd/scratch/sas4096/project/FASTQ/original_fastqs/SRR5209826.fastq.gz
+Processing single-end reads on 4 cores ...
+Finished in 88.114 s (10.516 µs/read; 5.71 M reads/minute).
+
+=== Summary ===
+
+Total reads processed:               8,379,396
+Reads with adapters:                   430,061 (5.1%)
+Reads written (passing filters):     8,379,396 (100.0%)
+
+Total basepairs processed:   837,939,600 bp
+Quality-trimmed:              18,823,978 bp (2.2%)
+Total written (filtered):    812,431,901 bp (97.0%)
+
+=== Adapter 1 ===
+
+Sequence: CTGTCTCTTATA; Type: regular 3'; Length: 12; Trimmed: 430061 times
+
+Minimum overlap: 3
+No. of allowed errors:
+1-9 bp: 0; 10-12 bp: 1
+
+Bases preceding removed adapters:
+  A: 17.9%
+  C: 33.4%
+  G: 24.1%
+  T: 24.5%
+  none/other: 0.0%
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+3	180207	130928.1	0	180207
+4	43679	32732.0	0	43679
+5	14111	8183.0	0	14111
+```
+
+The trimming report shows that about 5% of reads had adapters which were trimmed and 2% of bases were trimmed for quality<20.
+
+#### MultiQC on Trimmed Files
+
+```{bash, eval=FALSE, label="multiqc post-trimming"}
+multiqc /athena/angsd/scratch/sas4096/project/FASTQ/trimmed/ -o multiqc_report
+```
+
+![](fastqc_adapter_content_plot.png)
+
+Post-trimming the adapter content does seem to be minimised. The reads do not seem to be multi-modal as most of the adapters seem to be at the 3' ends. The library is therefore indeed single-end or at least the samples I am using are single-ended (other samples may be 50bp paired-end or multi-modal but the 12 samples used here seem to be cohesively single-end 100bp).
+
+![](fastqc_per_sequence_quality_scores_plot.png)
+
+![](cutadapt_trimmed_sequences_plot_3.png)
+
+## Alignment to hg38
+
+I first downloaded the GCF_000001405.40 RefSeq genome file and GTF from NCBI , transferred the ncbi_dataset.zip to my scratch directory and unzipped it to access the .fna file.
+
+### Building STAR index:
+
+I decided to use STAR as the aligner and used the below script to index the downloaded genome file.
+
+```{bash, eval=FALSE, label="star index build"}
+STAR --runMode genomeGenerate \
+     --runThreadN 16 \
+     --genomeDir /athena/angsd/scratch/sas4096/project/star_alignment/index \
+     --genomeFastaFiles /athena/angsd/scratch/sas4096/project/star_alignment/ncbi_dataset/data/GCF_000001405.40/GCF_000001405.40_GRCh38.p14_genomic.fna \
+     --sjdbGTFfile /athena/angsd/scratch/sas4096/project/star_alignment/ncbi_dataset/data/GCF_000001405.40/genomic.gtf \
+     --sjdbOverhang 99
+```
+
+I used the corresponding downloaded gtf file within the index build and set sjdbOverhand to 99 because my reads are 100bp and STAR recommends an sjdbOverhand of readlength -1 ( = 99).
+
+### STAR Alignment
+
+To align, I looped over the trimmed fastq files, using the built STAR-index and default STAR settings, indexing with samtools after alignment.
+
+```{bash, eval=FALSE, label="star script"}
+THREADS=16
+INPUT_DIR="/athena/angsd/scratch/sas4096/project/FASTQ/trimmed"
+OUTPUT_DIR="/athena/angsd/scratch/sas4096/project/star_alignment/aligned"
+STAR_INDEX="/athena/angsd/scratch/sas4096/project/star_alignment/index"
+
+for fq in $INPUT_DIR/*_trimmed.fq.gz
+do
+    base=$(basename $fq _trimmed.fq.gz)
+    echo "Processing $base ..."
+
+    STAR --runMode alignReads \
+         --runThreadN $THREADS \
+         --genomeDir $STAR_INDEX \
+         --readFilesIn $fq \
+         --readFilesCommand zcat \
+         --outFileNamePrefix $OUTPUT_DIR/${base}_ \
+         --outSAMtype BAM SortedByCoordinate 
+
+    samtools index $OUTPUT_DIR/${base}_Aligned.sortedByCoord.out.bam
+
+    echo "Done with $base"
+done
+
+```
+
+#### MultiQC of STAR to Look at Mapped and Unmapped Reads
+
+```{bash, eval=FALSE}
+multiqc /athena/angsd/scratch/sas4096/project/star_alignment/aligned/ \
+    -o /athena/angsd/scratch/sas4096/project/aligned/multiqc_output/
+```
+
+![](star_alignment_plot.png)
+
+Most samples have uniquely mapped reads with some reads mapped to multiple loci. There is minimal unmapped reads and unmapped:other reads. 
+
+### Qorts
+
+```{bash, eval=FALSE}
+source /home/fs01/sas4096/miniforge3/etc/profile.d/conda.sh
+conda activate qorts
+
+GTF=/athena/angsd/scratch/sas4096/project/star_alignment/ncbi_dataset/data/GCF_000001405.40/genomic.gtf
+BAMDIR=/athena/angsd/scratch/sas4096/project/star_alignment/aligned
+OUTDIR=/athena/angsd/scratch/sas4096/project/star_alignment/aligned/qorts
+QORTS=/athena/angsd/scratch/mef3005/share/envs/qorts/share/qorts-1.3.6-1/QoRTs.jar
+
+for BAM in $BAMDIR/*.bam; do
+    SAMPLE=$(basename $BAM .bam)
+    java -Xmx8g -jar $QORTS QC \
+        --singleEnded \
+        --generatePlots \
+        --maxReadLength 100 \
+        $BAM \
+        $GTF \
+        $OUTDIR/$SAMPLE/
+done
+```
+
+This script generated an individual qorts output folder and plots per sample. 
+
+### MultiQC on Qorts Outputs
+
+```{bash, eval=FALSE}
+multiqc /athena/angsd/scratch/sas4096/project/star_alignment/qorts/*/     -o /athena/angsd/scratch/sas4096/project/star_alignment/qorts/multiqc_output
+```
+
+![](qorts_alignments.png)
+
+This alignment comparison plot shows that most of the reads align to a unique gene CDS. A lot of reads map to  a unique gene UTR which is likely because for a lot og genes, the 3' UTR can make up a substantial proportion of the transcription product. A significant amount of genes do align to introns which is interesting considering the library was polyA extracted however this could be potential genomic DNA contamination. 
+
+### Gene Body Coverage from Qorts
+
+Representative 1 sample plots from each condition.
+
+````{r fig.show='hold', out.width='50%', fig.cap="Gene body coverage across conditions. Top left Unstimulated, top right PMA/Ionomycin, Bottom left IL15, Bottom Right Bryostatin", fig.subcap=c("Unstimulated Sample 10", "PMA/Ionomycin Sample 9", "IL15 Sample 12", "Bryostatin Sample 11"), fig.ncol=2, echo=FALSE}
+knitr::include_graphics(c(
+    "plot-basic.genebody.coverage.allGenes_unstim10.png",
+    "plot-basic.genebody.coverage.allGenes_PMA9.png",
+    "plot-basic.genebody.coverage.allGenes_IL1512.png",
+    "plot-basic.genebody.coverage.allGenes_bryo11.png"
+))
+````
+
+The gene-body coverage plots show similar trends across the different conditions. The Bryostatin gene-body plot (bottom right) shows a slightly greater bias towards the 3' end than the other conditions however there aren't major differences in the coverage and these plots look normal.
+
+## FeatureCounts
+
+featureCounts was used to extract the read aligment at the gene level using the hg38 annotation gtf.
+
+```{bash, eval=FALSE}
+source /home/fs01/sas4096/miniforge3/etc/profile.d/conda.sh
+conda activate angsd
+
+#!/bin/bash
+
+BAM_DIR=/athena/angsd/scratch/sas4096/project/star_alignment/aligned
+GTF=/athena/angsd/scratch/sas4096/project/star_alignment/ncbi_dataset/data/GCF_000001405.40/genomic.gtf
+OUT_DIR=$BAM_DIR/featurecounts_output_all
+
+mkdir -p "$OUT_DIR"
+
+featureCounts \
+    -a "$GTF" \
+    -o "$OUT_DIR/gene_counts_all_samples.txt" \
+    -s 0 \
+    -T 16 \
+    $BAM_DIR/*Aligned.sortedByCoord.out.bam
+```
+
+This outputted a feature counts summary for all the samples as well as per gene read count information.
+
+The below code processes the overall txt summary file and plots the assignments.
+
+```{R, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+df <- read.table(
+    "D:/data-sanjhna/Cornell/ANGSD/Project/featurecounts/gene_counts_all_samples.txt.summary",
+    header = TRUE,
+    check.names = FALSE
+)
+
+colnames(df) <- c("Status", gsub(".*/(.*?)_Aligned.*", "\\1", colnames(df)[-1]))
+
+combined_df <- df %>%
+    pivot_longer(-Status, names_to = "sample", values_to = "count")
+
+combined_df %>%
+    filter(count > 0) %>%
+    ggplot(aes(x = count, y = sample, fill = Status)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+    labs(
+        title = "FeatureCounts Assignment Summary",
+        x = "Read counts",
+        y = "Sample"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+```
+
+From this plot it seems like a good proportion of reads were assigned. The proportion of reads unassigned with no features may potentially be the HIV-reactivated transcripts that would left unassigned as the genomic.gtf used was the human and not HIV. There is a high proportion of unassigned multimapping reads however this is likely because featureCounts may count every alignment of the multimapped read as an "Unassigned_MultiMapping" case which would explain the discordance with the STAR summary.
+
+### Intronic Reads Investigation
+
+Due to the high amount of intronic read differences between groups found with Qorts multiqc, I investigated this further and extracted the fraction of intronic read alignment per sample and performed a statistical test. I used Kruskal-Wallis to test if there was any significant difference in intronic fraction across the conditions, followed by a pairwise Wicoxon rank sum exact test to compare pairwise.
+
+```{R}
+library(tidyr)
+library(dplyr)
+total_per_sample <- combined_df %>%
+    group_by(sample) %>%
+    summarise(total = sum(count))
+
+intronic_counts <- combined_df %>%
+    filter(Status == "Unassigned_NoFeatures") %>%
+    rename(intronic = count) %>%
+    select(sample, intronic)
+
+fractions <- intronic_counts %>%
+    left_join(total_per_sample, by = "sample") %>%
+    mutate(intronic_fraction = intronic / total)
+
+fractions <- fractions %>%
+    mutate(condition = case_when(
+        grepl("unstim", sample, ignore.case = TRUE) ~ "Unstimulated",
+        grepl("PMA",   sample, ignore.case = TRUE) ~ "PMA",
+        grepl("IL15",  sample, ignore.case = TRUE) ~ "IL15",
+        grepl("bryo",  sample, ignore.case = TRUE) ~ "Bryostatin",
+        TRUE ~ "Unknown"
+    ))
+
+kw_result <- kruskal.test(intronic_fraction ~ condition, data = fractions)
+print(kw_result)
+
+pairwise_result <- pairwise.wilcox.test(
+    fractions$intronic_fraction,
+    fractions$condition,
+    p.adjust.method = "BH"
+)
+print(pairwise_result)
+
+ggplot(fractions, aes(x = condition, y = intronic_fraction, fill = condition)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(width = 0.1, size = 2) +
+    labs(
+        title = "Fraction of Reads Mapping to Intronic Regions",
+        x = "Condition",
+        y = "Intronic Read Fraction"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+```
+
+The Kruskal-Wallis test revealed a statistically significant difference in intronic read fractions across conditions (χ² = 8.44, df = 3, p = 0.038). However, pairwise Wilcoxon tests with Benjamini-Hochberg correction did not identify any individually significant comparisons (all adjusted p > 0.05), likely reflecting limited statistical power with n ≈ 3 replicates per group.
+
+In latent T cells, RNA Pol II is paused at the HIV LTR and is released by TAT-mediated recruitment of P-TEFb (CDK9/Cyclin T1), which phosphorylates Pol II to enable transcriptional elongation and RNA processing [5]. The observed changes in CDK9 expression across conditions (in Methods 2.12) suggest that LRA stimulation may alter P-TEFb activity, potentially affecting host splicing efficiency as well. This could account for the lower intronic read fraction in stimulated samples, where poly(A) selection preferentially captures fully spliced transcripts compared to the higher proportion of pre-mRNA in resting cells. 
+
+These are some biological hypotheses of why intronic reads may be greater in unstimulated sample however there could be more likely technical batch effects of the library preparation resulting in this observation e.g. if different people processed the samples and experimental technique resulted in more genomic DNA contamination or incomplete polyA selection of the unstimulated samples. 
+
+Although the difference in intronic reads is evident, FeatureCounts was run with default gene-level settings, counting reads overlapping annotated exonic features only. Intronic reads fall into the Unassigned_NoFeatures category and do not contribute to the count matrix used for DESeq2 analysis, meaning the observed difference in intronic read fractions between conditions is unlikely to affect the differential expression results.
+
+## DGE Analysis
+### Read Count Table
+
+To generate the read count per gene table, I loaded the gene_counts.txt file generated from featureCounts and cleaned up the data to make a tidy matrix for future analysis.
+
+```{R, warning=FALSE, message=FALSE, result='hide'}
+count_table <- read.table(
+    "D:/data-sanjhna/Cornell/ANGSD/Project/featurecounts/gene_counts.txt",
+    header = TRUE,
+    skip = 1,
+    check.names = FALSE
+)
+
+count_table <- count_table[, c(1, 7:ncol(count_table))]
+
+colnames(count_table) <- c("GeneID", gsub(".*/(.*?)_Aligned.*", "\\1", colnames(count_table)[-1]))
+
+rownames(count_table) <- count_table$GeneID
+count_table <- count_table[, -1]
+
+head(count_table)
+dim(count_table)
+```
+
+The dimensions show 50k genes in the table with read counts for my 12 samples.
+
+### DESeq2 Object
+
+The DESeq2 object was constructed from the featureCounts gene-level count matrix across all 12 samples. Genes with zero counts across all samples were removed prior to analysis. Size factors were estimated to account for differences in sequencing depth between samples, and count distributions were assessed before and after normalisation. Replicate concordance was confirmed by pairwise scatter plots within each condition. To stabilise the mean-variance relationship inherent in raw RNA-seq count data, regularised log (rlog) transformation was applied, and variance stabilisation was assessed using mean-SD plots before and after transformation.
+
+```{R, warning=FALSE, message=FALSE}
+# reading in the feature counts results and changing name
+library(DESeq2)
+library(vsn)
+library(dplyr)
+
+count_table <- read.table(
+    "D:/data-sanjhna/Cornell/ANGSD/Project/featurecounts/gene_counts.txt",
+    header = TRUE,
+    skip = 1,
+    check.names = FALSE
+)
+
+colnames(count_table) <- c(
+    colnames(count_table)[1:6],
+    gsub(".*/(EM_.*?)_Aligned.*", "\\1", colnames(count_table)[7:ncol(count_table)])
+)
+
+row.names(count_table) <- make.names(count_table$Geneid)
+cts <- count_table[, 7:ncol(count_table)]
+
+df_coldata <- fractions %>%
+    select(sample, condition) %>%
+    mutate(condition = factor(condition,
+                              levels = c("Unstimulated", "PMA", "IL15", "Bryostatin"))) %>%
+    tibble::column_to_rownames("sample")
+
+dds <- DESeqDataSetFromMatrix(
+    countData = cts[, rownames(df_coldata)],
+    colData   = df_coldata,
+    design    = ~ condition
+)
+rowData(dds) <- count_table[, 1:6]
+head(counts(dds))
+colSums(counts(dds))
+colSums(counts(dds)) %>% barplot(las = 2, main = "Library sizes")
+```
+
+The library sizes are all relatively in the same range of 6e+06 to 1e+07. 2 Samples, 12 and 22, IL15 and Unstimulated respectively have much larger library sizes  beyong 1e+07.
+
+```{R}
+
+dim(dds)
+
+keep_genes <- rowSums(counts(dds)) > 0
+dds <- dds[keep_genes, ]
+dim(dds)
+
+dds <- estimateSizeFactors(dds)
+plot(sizeFactors(dds), colSums(counts(dds)),
+     ylab = "Library sizes", xlab = "Size factors", cex = 1.5,
+     main = "Size factors vs library size")
+```
+
+The size factors vs library size plot confirms a positive correlation between sequencing depth and estimated size factors, indicating that DESeq2 normalisation is appropriately accounting for library size differences. Most samples have size factors between 0.8 and 1.2, with the previous two samples showing larger library sizes (~11 million reads) and correspondingly higher size factors (~1.6). No extreme outliers were identified, supporting the inclusion of all 12 samples in downstream analysis.
+
+```{R, warning=FALSE, message=FALSE, fig.width=12, fig.height=7}
+par(mfrow = c(1, 2))
+boxplot(log2(counts(dds) + 1), notch = FALSE, las = 2,
+        main = "Non-normalized read counts",
+        ylab = "log2(read counts)", cex = 0.6)
+boxplot(log2(counts(dds, normalized = TRUE) + 1), notch = FALSE, las = 2,
+        main = "Size-factor-normalized read counts",
+        ylab = "log2(read counts)", cex = 0.6)
+```
+
+The non-normalised boxplot reflects the library size differences, with visible variation in median count distributions and the spread between samples. 
+Following size factor normalisation, distributions are more consistent across all 12 samples and some of the medians are closer together, confirming that sequencing depth differences have been corrected. Notably, some of the medians
+Importantly, size factor normalisation corrects for library size but does not equalise the number of detected genes between samples — lower depth samples will inherently detect fewer genes regardless of normalisation. Although this is an interesting distribution in median read counts, I proceeded with further analysis as DESe2 is designed to handle sparse and zero-inflated count data.
+
+Rlog transforming the data as DESeq2 recommends seems to be a good choice here as it will shrink the especially low counts in samples shown here.
+
+```{R, warning=FALSE, message=FALSE, fig.width=11, fig.height=8}
+par(mfrow = c(1, 1))
+
+assay(dds, "log_counts")      <- log2(counts(dds, normalized = FALSE) + 1)
+assay(dds, "log_norm_counts") <- log2(counts(dds, normalized = TRUE)  + 1)
+
+par(mfrow = c(2, 2))
+dds[, grepl("Unstimulated", dds$condition)] %>%
+    assay("log_norm_counts") %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "Unstimulated rep1 vs rep2")
+
+dds[, grepl("PMA", dds$condition)] %>%
+    assay("log_norm_counts") %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "PMA rep1 vs rep2")
+
+dds[, grepl("IL15", dds$condition)] %>%
+    assay("log_norm_counts") %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "IL15 rep1 vs rep2")
+
+dds[, grepl("Bryostatin", dds$condition)] %>%
+    assay("log_norm_counts") %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "Bryostatin rep1 vs rep2")
+par(mfrow = c(1, 1))
+
+vsn::meanSdPlot(assay(dds, "log_norm_counts"), ranks = FALSE, plot = FALSE)$gg +
+    labs(title = "Sequencing depth normalized log2(read counts)", y = "Standard deviation")
+
+#rlog transformation
+dst_rlog <- rlog(dds, blind = TRUE)
+rlog_norm_counts <- assay(dst_rlog)
+
+par(mfrow = c(2, 2))
+dst_rlog[, grepl("Unstimulated", dst_rlog$condition)] %>%
+    assay() %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "Unstimulated rep1 vs rep2 (rlog)")
+dst_rlog[, grepl("PMA", dst_rlog$condition)] %>%
+    assay() %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "PMA rep1 vs rep2 (rlog)")
+dst_rlog[, grepl("IL15", dst_rlog$condition)] %>%
+    assay() %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "IL15 rep1 vs rep2 (rlog)")
+dst_rlog[, grepl("Bryostatin", dst_rlog$condition)] %>%
+    assay() %>% .[, 1:2] %>%
+    plot(cex = 0.1, main = "Bryostatin rep1 vs rep2 (rlog)")
+par(mfrow = c(1, 1))
+
+vsn::meanSdPlot(assay(dst_rlog), ranks = FALSE, plot = FALSE)$gg +
+    labs(title = "Following rlog transformation", x = "Mean", y = "Standard deviation") +
+    coord_cartesian(ylim = c(0, 6))
+```
+
+Before rlog transformation, the data shows RNA-seq mean-variance problem where lowly expressed genes have wildly variable standard deviations (up to 6), and the replicate scatter plots were dominated by streaky artefacts wherever one replicate had zero counts, making replicates look more discordant than they actually were.
+For CD4+ t cells specifically effector memory cells analysed here, they are likely to have specific transcriptionally ON genes and transcriptional heterogeneity resulting in the zero counts across replicates.
+
+Notably, the unstimulated, IL15 and Bryostatin comparisons show slightly higher variance than PMA/Ionomycin indicating targeted transcriptional activation of the cells in PMA stimulation.
+
+After rlog transformation this cleaned up considerably. The maximum SD halved to 3, highly expressed genes stabilised to SD below 0.5, and the scatter plots lost their streaking entirely showing that the replicates were actually in good agreement across all four conditions all along. The remaining instability at very low counts is normal and expected, and DESeq2's independent filtering handles this automatically.
+Overall the rlog transformation worked well.
+
+### Correlation Coefficient Heatmap
+
+The below code compares the rlog normalised counts of each sample using Pearson correlation to examine similarity between samples.
+
+```{R}
+corr_coeff <- cor(rlog_norm_counts, method ="pearson")
+as.dist(1-corr_coeff, upper=TRUE) %>%
+as.matrix %>%
+pheatmap::pheatmap(main="Pearson correlation",
+treeheight_row=0) 
+```
+
+The correlation heatmap shows that the PMA samples somewhat cluster together. IL15 and Bryostatin appear to cluster together as well whilst Bryostatin and Unstimulated samples have the least correlation and least similarity.
+
+```{R, warning=FALSE, message=FALSE, fig.width=12, fig.height=6}
+par(mfrow=c(1,1))
+as.dist(1-corr_coeff) %>%
+hclust %>%
+plot(labels=colnames(.), main="rlog transformed read counts")
+```
+
+The dendrogram shows concordant results to the heatmap with clustering of IL15 and Bryostatin and separate clusters of PMA and Unstimulated samples respectively.
+
+```{R, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(RColorBrewer)
+dds %<>% DESeq()
+dds %<>% estimateSizeFactors()
+dds %<>% estimateDispersions()
+dds %<>% nbinomWaldTest()
+dds
+rowData(dds) %>% colnames
+```
+### PCA
+
+The PCA plotted here uses the top 500 most variably expressed genes across all samples, selected by ranking genes on their row variance across rlog-normalised counts.
+
+```{R, warning=FALSE, message=FALSE}
+rv <- rowVars(rlog_norm_counts)
+top_variable <- order(rv, decreasing=TRUE)[seq_len(500)]
+pca <- prcomp(t(rlog_norm_counts[top_variable, ]))
+
+pca_var <- pca$sdev^2
+pca_var_pct <- round(pca_var / sum(pca_var) * 100, 1)
+
+barplot(pca_var_pct[1:10],
+        names.arg = paste0("PC", 1:10),
+        xlab = "Principal Component",
+        ylab = "Variance Explained (%)",
+        main = "Scree Plot",
+        col = brewer.pal(10, "Set3"),
+        border = NA)
+
+plotPCA(dst_rlog) +
+labs(color=NULL) +
+theme_bw()
+
+```
+
+The PCA shows relatively low variance captured by principal components 1 and 2 (21–24%), suggesting that transcriptional variation is distributed across many genes and dimensions rather than driven by a single dominant source. The scree plot shows a drop-off in variance between PC2 and PC3, with subsequent components explaining moderate variance, indicating that PC1 and PC2 capture the strongest structured differences between samples. The absence of a single dominant principal component suggests that transcriptional differences are complex and influenced by multiple biological and/or technical factors. 
+
+The PMA/ionomycin samples cluster distinctly and are separated from the IL-15, bryostatin, and unstimulated conditions, indicating a greater shift in gene expression. This is consistent with the stronger latency-reversing activity of PMA/ionomycin compared to the other treatments.
+
+In contrast, IL-15 and bryostatin samples cluster more closely together, suggesting more similar transcriptional effects. This aligns with previous observations from the heatmap and is consistent with their relatively weaker and potentially overlapping mechanisms of action compared to PMA/ionomycin.
+
+## Significance Assessment
+
+```{R, warning=FALSE, message=FALSE, fig.width=10, fig.height=4}
+rowData(dds) %>% colnames
+
+par(mfrow = c(1, 3))
+rowData(dds)$WaldPvalue_condition_PMA_vs_Unstimulated %>%
+    hist(breaks = 19, main = "PMA vs Unstimulated", xlab = "p-value")
+rowData(dds)$WaldPvalue_condition_IL15_vs_Unstimulated %>%
+    hist(breaks = 19, main = "IL15 vs Unstimulated", xlab = "p-value")
+rowData(dds)$WaldPvalue_condition_Bryostatin_vs_Unstimulated %>%
+    hist(breaks = 19, main = "Bryostatin vs Unstimulated", xlab = "p-value")
+```
+
+The distribution of p values from 0 to 1 with the majority either closer to 0 or closer to 1 indicates that genes are either very significantly altered or very unsignificantly changed in the LRA conditions. The significant proportion of genes closer to 1 may be a result of very lowly expressed genes where DESeq2 has little statistical power in distinguishing the conditions apart. Independent filtering would remove these genes increasing the power to detect real differentially altered genes.
+
+```{R, warning=FALSE, message=FALSE, fig.width=12, fig.height=6}
+library(DESeq2)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+DGE_results_PMA  <- results(dds,
+                             contrast             = c("condition", "PMA", "Unstimulated"),
+                             independentFiltering = TRUE,
+                             alpha                = 0.05)
+DGE_results_IL15 <- results(dds,
+                             contrast             = c("condition", "IL15", "Unstimulated"),
+                             independentFiltering = TRUE,
+                             alpha                = 0.05)
+DGE_results_bryo <- results(dds,
+                             contrast             = c("condition", "Bryostatin", "Unstimulated"),
+                             independentFiltering = TRUE,
+                             alpha                = 0.05)
+
+plot_filter <- function(res, title) {
+  filt <- metadata(res)$filterNumRej
+  filt$fitted_line <- metadata(res)$lo.fit$y
+  theta_cut <- metadata(res)$filterTheta
+  ggplot(filt) +
+    geom_point(aes(x = theta, y = numRej)) +
+    geom_line(aes(x = theta, y = fitted_line), color = "red") +
+    geom_vline(xintercept = theta_cut) +
+    labs(title = title,
+         x = "Quantile threshold (theta)",
+         y = "Number of rejections") +
+    theme_bw()
+}
+
+filter_plot_PMA  <- plot_filter(DGE_results_PMA,  "PMA vs Unstimulated")
+filter_plot_IL15 <- plot_filter(DGE_results_IL15, "IL15 vs Unstimulated")
+filter_plot_bryo <- plot_filter(DGE_results_bryo, "Bryostatin vs Unstimulated")
+
+grid.arrange(filter_plot_PMA, filter_plot_IL15, filter_plot_bryo, ncol = 3)
+
+par(mfrow = c(1, 3))
+hist(DGE_results_PMA$padj,
+     breaks = 19,
+     main = "PMA vs Unstimulated (adjusted p-values)",
+     xlab = "Adjusted p-value")
+hist(DGE_results_IL15$padj,
+     breaks = 19,
+     main = "IL15 vs Unstimulated (adjusted p-values)",
+     xlab = "Adjusted p-value")
+hist(DGE_results_bryo$padj,
+     breaks = 19,
+     main = "Bryostatin vs Unstimulated (adjusted p-values)",
+     xlab = "Adjusted p-value")
+par(mfrow = c(1, 1))
+```
+Pre-filtering histogram:
+The histograms of raw p values pre-adjustment show that a significant proportion of genes/features are either very significantly altered between the LRAs and unstimulated or very unsignificantly altered.
+
+Theta threshold plots:
+These plots show how the number of statistically significant features (“rejections”) change as I vary a filtering threshold (θ) when comparing conditions. At low thetas (permissive filtering), there are a lot of significant genes passed through but as the threshold is increased, the number of rejections initially increases before strict filtering makes the number of rejections drop off. The vertical lines indicate the selected optimal threshold used in filtering. Across the conditions the optimal threshold ranges from 0.3-0.4 which is used to remove low-information or highly variable features whilst retaining the true positives.
+
+Post-adjustment with independant filtering, the p adjusted values plot for IL15 shows a lot of genes have adjusted p-values close to 1, meaning they are not significantly differentially expressed after multiple testing correction. 
+With PMA and Bryostatin, a good proportion of genes have low adjusted p-values (near 0), representing genes with strong evidence of differential expression. Overall, PMA shows the strongest signal (more low adjusted p-values), IL15 the weakest, and Bryostatin is intermediate, indicating different magnitudes of transcriptional response across conditions.
+
+## Most & Least Significantly Changed Genes
+
+```{R, fig.width=12, fig.height=6}
+library(dplyr)
+library(tibble)
+library(DESeq2)
+
+df_PMA <- as.data.frame(DGE_results_PMA) %>%
+    tibble::rownames_to_column("gene") %>%
+    filter(!is.na(padj))
+
+top_gene_PMA <- df_PMA$gene[which.min(df_PMA$padj)]
+
+par(mfrow = c(1, 2))
+plotCounts(dds,
+           gene = top_gene_PMA,
+           normalized = TRUE,
+           xlab = "",
+           main = paste0("PMA: most significant (", top_gene_PMA, ")"))
+plotCounts(dds,
+           gene = df_PMA$gene[which.max(df_PMA$padj)],
+           normalized = TRUE,
+           xlab = "",
+           main = "PMA: least significant gene")
+
+df_IL15 <- as.data.frame(DGE_results_IL15) %>%
+    tibble::rownames_to_column("gene") %>%
+    filter(!is.na(padj))
+
+top_gene_IL15 <- df_IL15$gene[which.min(df_IL15$padj)]
+
+par(mfrow = c(1, 2))
+plotCounts(dds,
+           gene = top_gene_IL15,
+           normalized = TRUE,
+           xlab = "",
+           main = paste0("IL15: most significant (", top_gene_IL15, ")"))
+plotCounts(dds,
+           gene = df_IL15$gene[which.max(df_IL15$padj)],
+           normalized = TRUE,
+           xlab = "",
+           main = "IL15: least significant gene")
+
+df_bryo <- as.data.frame(DGE_results_bryo) %>%
+    tibble::rownames_to_column("gene") %>%
+    filter(!is.na(padj))
+
+top_gene_bryo <- df_bryo$gene[which.min(df_bryo$padj)]
+
+par(mfrow = c(1, 2))
+plotCounts(dds,
+           gene = top_gene_bryo,
+           normalized = TRUE,
+           xlab = "",
+           main = paste0("Bryostatin: most significant (", top_gene_bryo, ")"))
+plotCounts(dds,
+           gene = df_bryo$gene[which.max(df_bryo$padj)],
+           normalized = TRUE,
+           xlab = "",
+           main = "Bryostatin: least significant gene")
+
+par(mfrow = c(1, 1))
+```
+```{R, fig.width=12, fig.height=6}
+par(mfrow = c(1, 3))
+
+plotCounts(dds,
+           gene       = top_gene_PMA,
+           normalized = TRUE,
+           xlab       = "",
+           main       = paste0("PMA: ", top_gene_PMA))
+
+plotCounts(dds,
+           gene       = top_gene_IL15,
+           normalized = TRUE,
+           xlab       = "",
+           main       = paste0("IL15: ", top_gene_IL15))
+
+plotCounts(dds,
+           gene       = top_gene_bryo,
+           normalized = TRUE,
+           xlab       = "",
+           main       = paste0("Bryostatin: ", top_gene_bryo))
+
+par(mfrow = c(1, 1))
+```
+
+These plots show that for both Bryostatin and IL15, IL2RA is most significantly altered compared to the Unstimulated cells, a gene downstream of the STAT5B signalling pathway [6]. PMA’s most significantly altered gene was TNRC6B, which is involved in post-transcriptional regulation, including mRNA decay, poly(A) tail shortening, and regulatory non-coding RNA–mediated gene silencing [7].
+This could suggest that PMA stimulation may strongly influence gene expression not only at the transcriptional level but also through post-transcriptional regulatory mechanisms.
+
+
+
+## Volcano Plots
+```{r warning=FALSE, message=FALSE, fig.width=18, fig.height=6}
+library(EnhancedVolcano)
+library(patchwork)
+library(RColorBrewer)
+
+volcano_cols <- c("grey70",
+                  brewer.pal(3, "Set2")[1],
+                  brewer.pal(3, "Set2")[3],
+                  brewer.pal(3, "Set1")[1])
+
+df_PMA_shrunk  <- lfcShrink(dds, coef = "condition_PMA_vs_Unstimulated",        type = "apeglm")
+df_IL15_shrunk <- lfcShrink(dds, coef = "condition_IL15_vs_Unstimulated",       type = "apeglm")
+df_bryo_shrunk <- lfcShrink(dds, coef = "condition_Bryostatin_vs_Unstimulated", type = "apeglm")
+
+vp_PMA_shrunk <- EnhancedVolcano(as.data.frame(df_PMA_shrunk),
+    lab      = rownames(df_PMA_shrunk),
+    x        = "log2FoldChange", y = "padj",
+    pCutoff  = 0.05, FCcutoff = 1,
+    title    = "PMA vs Unstimulated (shrunk)",
+    subtitle = NULL, col = volcano_cols)
+
+vp_IL15_shrunk <- EnhancedVolcano(as.data.frame(df_IL15_shrunk),
+    lab      = rownames(df_IL15_shrunk),
+    x        = "log2FoldChange", y = "padj",
+    pCutoff  = 0.05, FCcutoff = 1,
+    title    = "IL15 vs Unstimulated (shrunk)",
+    subtitle = NULL, col = volcano_cols)
+
+vp_bryo_shrunk <- EnhancedVolcano(as.data.frame(df_bryo_shrunk),
+    lab      = rownames(df_bryo_shrunk),
+    x        = "log2FoldChange", y = "padj",
+    pCutoff  = 0.05, FCcutoff = 1,
+    title    = "Bryostatin vs Unstimulated (shrunk)",
+    subtitle = NULL, col = volcano_cols)
+
+vp_PMA_shrunk + vp_IL15_shrunk + vp_bryo_shrunk +
+    plot_layout(ncol = 3, guides = "collect") &
+    theme(legend.position = "bottom")
+```
+
+The shrunk volcano plots show some key differentially expressed genes. For PMA, as seen previously, TNRC6B is highly altered compared to the Unstimulated and so is SLC39A14, a gene that encodes a transport protein that uptakes manganese across cell membranes [8]. 
+
+With IL15, IL2RA and RRM2 are more differentially expressed. RRM2 encodes one of two non-identical subunits for ribonucleotide reductase, maintaining the dNTP pools for DNA biosynthesis, repair and replication [10].
+
+Bryostatin shows similarly altered genes to IL15 such as IL2RA and RRM2 however also shows altered expression of IL7R, another interleukin used in efficient activation and expansion of CD4+ T cells [11]. 
+
+## MA Plots
+
+```{R, fig.width=12, fig.height=12}
+par(mfrow = c(3, 2))
+
+plotMA(DGE_results_PMA,  alpha = 0.05, main = "PMA (no shrinkage)",          ylim = c(-4, 4))
+plotMA(df_PMA_shrunk,    alpha = 0.05, main = "PMA (with shrinkage)",        ylim = c(-4, 4))
+
+plotMA(DGE_results_IL15, alpha = 0.05, main = "IL15 (no shrinkage)",         ylim = c(-4, 4))
+plotMA(df_IL15_shrunk,   alpha = 0.05, main = "IL15 (with shrinkage)",       ylim = c(-4, 4))
+
+plotMA(DGE_results_bryo, alpha = 0.05, main = "Bryostatin (no shrinkage)",   ylim = c(-4, 4))
+plotMA(df_bryo_shrunk,   alpha = 0.05, main = "Bryostatin (with shrinkage)", ylim = c(-4, 4))
+
+par(mfrow = c(1, 1))
+```
+
+The MA plots display the log2 fold change against mean normalised expression for each gene, with blue points indicating statistically significant genes (padj < 0.05). In the unshrunk plot, lowly expressed genes show highly inflated and unreliable fold change estimates, visible as the wide trumpet-shaped spread on the left. Following apeglm LFC shrinkage, these noisy estimates are pulled towards zero, producing a cleaner distribution whilst preserving the fold changes of reliably expressed significant genes at higher mean counts.
+
+## STAT5
+
+To investigate my hypothesis of LRA effect on downstream STAT5 pathways further, I examined the read count alignment to STAT5 across conditions. I decidede to include STAT5A along with STAT5B as they share high sequence homology (95%).
+
+```{R, warning=FALSE, message=FALSE, results='hide'}
+library(org.Hs.eg.db)
+
+hg38 <- org.Hs.eg.db
+keytypes(hg38)
+columns(hg38)
+
+head(rownames(dds))
+
+AnnotationDbi::select(
+    hg38,
+    keys = rownames(dds),
+    keytype = "SYMBOL",
+    columns = c("ENSEMBL", "ENTREZID", "GENENAME")
+)
+```
+
+The plot below uses DESeq2's size-factor normalised counts
+
+```{R, warning=FALSE, message=FALSE, fig.width = 12, fig.height = 6}
+par(mfrow = c(1, 2))
+plotCounts(dds, gene = "STAT5A", intgroup = "condition",
+           normalized = TRUE, xlab = "", main = "STAT5A normalised counts")
+plotCounts(dds, gene = "STAT5B", intgroup = "condition",
+           normalized = TRUE, xlab = "", main = "STAT5B normalised counts")
+
+par(mfrow = c(1, 1))
+```
+
+The rlog normalised plot below applies size factor normalisation and then a variance-stabilising log transformation that shrinks differences for lowly expressed genes, making the data more homoscedastic.
+
+```{R, warning=FALSE, message=FALSE, fig.width = 12, fig.height = 6}
+stat5_id <- rownames(dds)[grep("Stat5|STAT5", rownames(dds), ignore.case = TRUE)]
+stat5_id
+
+rlog_norm_counts[c("STAT5A", "STAT5B"), ] %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("gene") %>%
+    pivot_longer(-gene, names_to = "sample", values_to = "count") %>%
+    mutate(condition = dds$condition[match(sample, colnames(rlog_norm_counts))]) %>%
+    ggplot(aes(x = condition, y = count, fill = condition)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(width = 0.1, size = 2) +
+    scale_fill_brewer(palette = "Set2") +
+    facet_wrap(~ gene) +
+    labs(
+        title = "STAT5A and STAT5B expression across conditions",
+        x     = "Condition",
+        y     = "rlog-normalised expression"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+These plots STAT5A and STAT5B show interesting results. With STAT5A, PMA appears to upregulate mRNA levels of STAT5A compared to Unstimulated whilst IL15 and Bryostatin seem to have little effect. STAT5B seems to have decreased mRNA expression with all the LRA conditions compared to the Unstimulated. This is an interesting finding as IL15 is thought to activate the JAK-STAT pathway. One hypothesis may be that the increased gene signalling results in a negative feedback loop where excessive STAT signalling results in decreased mRNA expression.
+
+### Statistical test between STAT5B conditions
+
+To statistically test differences in STAT expression across the conditions, I used a Kruskal-Wallis to see if there were global differences followed by pairwise Wilcoxon with BH correction to see between LRA and Unstimulated significance.
+
+```{R}
+# Extract STAT5A and STAT5B with conditions
+stat5_data <- rlog_norm_counts[c("STAT5A", "STAT5B"), ] %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("gene") %>%
+    pivot_longer(-gene, names_to = "sample", values_to = "count") %>%
+    mutate(condition = dds$condition[match(sample, colnames(rlog_norm_counts))])
+
+for (g in c("STAT5A", "STAT5B")) {
+    cat("\n====", g, "====\n")
+    df <- stat5_data %>% filter(gene == g)
+    
+    print(kruskal.test(count ~ condition, data = df))
+    
+    print(pairwise.wilcox.test(df$count, df$condition, 
+                                p.adjust.method = "BH"))
+}
+```
+
+Kruskal-Wallis testing revealed a statistically significant difference in STAT5B expression across conditions (p = 0.050), with STAT5A showing a similar trend that did not reach significance (p = 0.075). However, pairwise post-hoc comparisons did not identify specific condition contrasts reaching significance following BH correction, likely reflecting limited statistical power with n=3 replicates per group.
+
+## DGE Heatmaps
+
+```{R, warning=FALSE, message=FALSE, results='hide'}
+df_annots_dge <- AnnotationDbi::select(
+    hg38,
+    keys    = rownames(df_PMA_shrunk),
+    keytype = "SYMBOL",
+    columns = c("GENENAME", "ENTREZID")
+)
+
+df_annots_dge <- df_annots_dge[!duplicated(df_annots_dge$SYMBOL), ]
+df_annots_dge$gene_name <- ifelse(is.na(df_annots_dge$GENENAME),
+                                   df_annots_dge$SYMBOL,
+                                   df_annots_dge$GENENAME)
+rownames(df_annots_dge) <- df_annots_dge$SYMBOL
+
+df_PMA_annot_final <- merge(
+    df_annots_dge[, c("SYMBOL", "gene_name", "ENTREZID")],
+    as.data.frame(df_PMA_shrunk),
+    by.x = "SYMBOL", by.y = "row.names", all.y = TRUE)
+
+df_IL15_annot_final <- merge(
+    df_annots_dge[, c("SYMBOL", "gene_name", "ENTREZID")],
+    as.data.frame(df_IL15_shrunk),
+    by.x = "SYMBOL", by.y = "row.names", all.y = TRUE)
+
+df_bryo_annot_final <- merge(
+    df_annots_dge[, c("SYMBOL", "gene_name", "ENTREZID")],
+    as.data.frame(df_bryo_shrunk),
+    by.x = "SYMBOL", by.y = "row.names", all.y = TRUE)
+
+df_PMA_annot_final  %>% arrange(padj) %>% head(10)
+df_IL15_annot_final %>% arrange(padj) %>% head(10)
+df_bryo_annot_final %>% arrange(padj) %>% head(10)
+
+write.table(subset(df_PMA_annot_final,  padj < 0.05),
+            file = "DESeq2results_PMA_vs_Unstimulated.tsv",
+            sep = "\t", quote = FALSE, row.names = FALSE)
+
+write.table(subset(df_IL15_annot_final, padj < 0.05),
+            file = "DESeq2results_IL15_vs_Unstimulated.tsv",
+            sep = "\t", quote = FALSE, row.names = FALSE)
+
+write.table(subset(df_bryo_annot_final, padj < 0.05),
+            file = "DESeq2results_Bryostatin_vs_Unstimulated.tsv",
+            sep = "\t", quote = FALSE, row.names = FALSE)
+```
+```{R, warning=FALSE, message=FALSE, result='hide'}
+library(DESeq2)
+library(magrittr)
+
+DGE_genes_PMA  <- as.data.frame(DGE_results_PMA)  %>% filter(!is.na(padj) & padj < 0.05) %>% arrange(padj)
+DGE_genes_IL15 <- as.data.frame(DGE_results_IL15) %>% filter(!is.na(padj) & padj < 0.05) %>% arrange(padj)
+DGE_genes_bryo <- as.data.frame(DGE_results_bryo) %>% filter(!is.na(padj) & padj < 0.05) %>% arrange(padj)
+
+nrow(DGE_genes_PMA)
+nrow(DGE_genes_IL15)
+nrow(DGE_genes_bryo)
+```
+```{R, warning=FALSE, message=FALSE}
+library(pheatmap)
+
+deg_PMA  <- rownames(DGE_genes_PMA)
+deg_IL15 <- rownames(DGE_genes_IL15)
+deg_bryo <- rownames(DGE_genes_bryo)
+
+genes_dge <- unique(c(deg_PMA, deg_IL15, deg_bryo))
+
+rlog_dge <- rlog_norm_counts[genes_dge, ]
+
+anno_col <- data.frame(
+    condition = dds$condition,
+    row.names = colnames(rlog_norm_counts)
+)
+
+pheatmap(rlog_dge,
+         scale          = "none",
+         show_rownames  = FALSE,
+         annotation_col = anno_col,
+         main           = "Combined DEG heatmap (rlog counts, unscaled)",
+         color          = colorRampPalette(RColorBrewer::brewer.pal(7, "Greens"))(100))
+
+pheatmap(rlog_dge,
+         scale          = "row",
+         show_rownames  = FALSE,
+         annotation_col = anno_col,
+         main           = "Combined DEG heatmap (row-scaled z-score)")
+```
+
+These heatmaps show how z-score scaling helps for visualising DGE results. Compared to the Unstimulated cells, Bryostatin appears to have the most distinctly different gene expression profile.
+
+### Top 50 DGE Genes
+
+```{R}
+lfc_matrix <- data.frame(
+    PMA  = as.data.frame(DGE_results_PMA)[genes_dge,  "log2FoldChange"],
+    IL15 = as.data.frame(DGE_results_IL15)[genes_dge, "log2FoldChange"],
+    Bryo = as.data.frame(DGE_results_bryo)[genes_dge, "log2FoldChange"],
+    row.names = genes_dge
+)
+
+top50_genes <- lfc_matrix %>%
+    mutate(mean_abs_lfc = rowMeans(abs(across(everything())))) %>%
+    arrange(desc(mean_abs_lfc)) %>%
+    head(50) %>%
+    rownames()
+
+mat_scaled <- t(scale(t(rlog_dge[top50_genes, ])))
+
+pheatmap(mat_scaled,
+         annotation_col = anno_col,
+         cluster_rows   = TRUE,
+         cluster_cols   = TRUE,
+         show_rownames  = TRUE,
+         show_colnames  = TRUE,
+         fontsize_row   = 7,
+         border_color   = NA,
+         breaks         = seq(-2, 2, length.out = 101),
+         main           = "Top 50 DE Genes (padj < 0.05, z-scored rlog counts)")
+```
+
+This heatmap shows the top 50 DE genes p adjusted ad z-scored rlog counts. With just the top 50 genes, the dendrogram clustering changes and other than a separate cluster of unstimulated, all the LRA stimulation conditions were intermixed and not forming defined clusters.
+
+The colour grading of the heatmap shows that there are a small subset of specifically highly upregulated genes in the unstimulated condition that are downregulated in the LRA conditions such as TGFA, KLHL3, IL11RA or LRRC37A8P.
+
+Several genes are upregulated in the LRA conditions including several interleukin genes like IL13, Il5, IL10 or IL9, confirming that the LRAs are activating the CD4 t cells. CDC6, MCM10, RRM2, GINS2 are slightly upregulated and these are genes involved in the cell proliferation pathway suggesting that LRAs can potentially activate the clonal proliferation pathway. Interestingly, CASP9 an apoptotic gene is slightly upregulated in some conditions indicating that perhaps the LRAs are causing excessive gene activation and thus activating apoptotic pathways [12].
+
+PMA/Ionomycin seems to have a selective impact on specific genes compared to the unstimulated whilst IL15 and Bryostatin have broader gene activation effects.
+
+## Intronic Reads - CDK9
+
+```{R, fig.width=12, fig.height=6}
+ptefb_genes <- c("CDK9", "CCNT1", "CCNT2")
+
+DGE_genes_PMA  %>% filter(rownames(.) %in% ptefb_genes)
+DGE_genes_IL15 %>% filter(rownames(.) %in% ptefb_genes)
+DGE_genes_bryo %>% filter(rownames(.) %in% ptefb_genes)
+
+rlog_norm_counts[ptefb_genes[ptefb_genes %in% rownames(dds)], ] %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("gene") %>%
+    pivot_longer(-gene, names_to = "sample", values_to = "count") %>%
+    mutate(condition = dds$condition[match(sample, colnames(rlog_norm_counts))]) %>%
+    ggplot(aes(x = condition, y = count, fill = condition)) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(width = 0.1, size = 2) +
+    scale_fill_brewer(palette = "Set2") +
+    facet_wrap(~ gene, scales = "free_y") +
+    labs(title = "P-TEFb complex gene expression across conditions",
+         x = "Condition", y = "rlog-normalised expression") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## GO Enrichment
+
+Here, I make 3 GO enrichment objects per condition compared to the Unstimulated condition cells.
+
+```{R, warning=FALSE, message=FALSE, result='hide'}
+library(clusterProfiler)
+library(enrichplot)
+library(ggplot2)
+library(DOSE)
+
+organism <- org.Hs.eg.db
+ego_PMA <- enrichGO(
+    gene          = rownames(DGE_genes_PMA),
+    universe      = rownames(dds),
+    ont           = "ALL",
+    keyType       = "SYMBOL",
+    minGSSize     = 3,
+    maxGSSize     = 800,
+    pvalueCutoff  = 0.05,
+    OrgDb         = organism,
+    pAdjustMethod = "BH"
+)
+
+ego_IL15 <- enrichGO(
+    gene          = rownames(DGE_genes_IL15),
+    universe      = rownames(dds),
+    ont           = "ALL",
+    keyType       = "SYMBOL",
+    minGSSize     = 3,
+    maxGSSize     = 800,
+    pvalueCutoff  = 0.05,
+    OrgDb         = organism,
+    pAdjustMethod = "BH"
+)
+
+ego_bryo <- enrichGO(
+    gene          = rownames(DGE_genes_bryo),
+    universe      = rownames(dds),
+    ont           = "ALL",
+    keyType       = "SYMBOL",
+    minGSSize     = 3,
+    maxGSSize     = 800,
+    pvalueCutoff  = 0.05,
+    OrgDb         = organism,
+    pAdjustMethod = "BH"
+)
+
+ego_PMA[1, ] %>% str
+ego_IL15[1, ] %>% str
+ego_bryo[1, ] %>% str
+```
+
+```{R, warning=FALSE, message=FALSE}
+rnp_biogenesis_genes <- unlist(strsplit(ego_PMA[1, "geneID"], "/"))
+head(rnp_biogenesis_genes)
+
+mitotic_cycle_genes <- unlist(strsplit(ego_IL15[1, "geneID"], "/"))
+head(mitotic_cycle_genes)
+
+chromosome_org_genes <- unlist(strsplit(ego_bryo[1, "geneID"], "/"))
+head(mitotic_cycle_genes)
+
+write.table(ego_PMA@result[ , c("ID", "pvalue")],
+            file="enrichGO_PMA.txt", sep="\t",
+            quote=FALSE, row.names=FALSE)
+write.table(ego_IL15@result[ , c("ID", "pvalue")],
+            file="enrichGO_IL15.txt", sep="\t",
+            quote=FALSE, row.names=FALSE)
+write.table(ego_bryo@result[ , c("ID", "pvalue")],
+            file="enrichGO_Bryo.txt", sep="\t",
+            quote=FALSE, row.names=FALSE)
+```
+The most enriched GO term for PMA seems to be RNP biogenesis genes, for IL15 its mitotic cycle genes and for Bryostatin it is chromosome organisation genes. The genes in the GO enrichment are consistent with the genes identified from the volcano plots.
+
+The below plots are from reviGO using the generated .txt files. These are the biological process terms enriched from the GO gene list with box size corresponding to log10 genes in that process.
+
+![](PMAGO.png)
+
+With PMA, there is high cytokine production, inflammation markers and apoptosis regulation as well as several RNA processing pathways.
+
+![](IL15Go.png)
+
+With IL15, most enriched processes fall under chromosome organisation, cell cycle processes, RNA splicing and metabolic processes.
+
+![](BryoGO.png)
+
+With Bryostatin, the processes are similar to IL15 with cell cycle regulation and cytokine regulation the main enriched processes.
+
+## GSEA
+
+GSEA pairwise objects are made below using gseGO.
+
+```{R, warning=FALSE, message=FALSE}
+
+gene_list_PMA  <- sort(setNames(DGE_results_PMA$log2FoldChange,  rownames(DGE_results_PMA)),  decreasing = TRUE)
+
+gene_list_IL15 <- sort(setNames(DGE_results_IL15$log2FoldChange, rownames(DGE_results_IL15)), decreasing = TRUE)
+
+gene_list_bryo <- sort(setNames(DGE_results_bryo$log2FoldChange, rownames(DGE_results_bryo)), decreasing = TRUE)
+
+gene_list_PMA  <- gene_list_PMA[!is.na(gene_list_PMA)]
+gene_list_IL15 <- gene_list_IL15[!is.na(gene_list_IL15)]
+gene_list_bryo <- gene_list_bryo[!is.na(gene_list_bryo)]
+
+gse_PMA <- gseGO(
+    geneList      = gene_list_PMA,
+    ont           = "ALL",
+    keyType       = "SYMBOL",      
+    minGSSize     = 3,
+    maxGSSize     = 800,
+    pvalueCutoff  = 0.05,
+    verbose       = TRUE,
+    OrgDb         = organism,
+    pAdjustMethod = "BH"
+)
+
+gse_IL15 <- gseGO(
+    geneList      = gene_list_IL15,
+    ont           = "ALL",
+    keyType       = "SYMBOL",
+    minGSSize     = 3,
+    maxGSSize     = 800,
+    pvalueCutoff  = 0.05,
+    verbose       = TRUE,
+    OrgDb         = organism,
+    pAdjustMethod = "BH"
+)
+
+gse_bryo <- gseGO(
+    geneList      = gene_list_bryo,
+    ont           = "ALL",
+    keyType       = "SYMBOL",
+    minGSSize     = 3,
+    maxGSSize     = 800,
+    pvalueCutoff  = 0.05,
+    verbose       = TRUE,
+    OrgDb         = organism,
+    pAdjustMethod = "BH"
+)
+
+dotplot(gse_PMA,  showCategory = 10, split = ".sign", title = "GSEA PMA vs Unstimulated") +
+    facet_grid(. ~ .sign)
+
+dotplot(gse_IL15, showCategory = 10, split = ".sign", title = "GSEA IL15 vs Unstimulated") +
+    facet_grid(. ~ .sign)
+
+dotplot(gse_bryo, showCategory = 10, split = ".sign", title = "GSEA Bryostatin vs Unstimulated") +
+    facet_grid(. ~ .sign)
+
+gse_PMA$Description[1]
+gse_IL15$Description[1]
+gse_bryo$Description[1]
+
+gseaplot(gse_PMA,  by = "all", title = gse_PMA$Description[1],  geneSetID = 1)
+gseaplot(gse_IL15, by = "all", title = gse_IL15$Description[1], geneSetID = 1)
+gseaplot(gse_bryo, by = "all", title = gse_bryo$Description[1], geneSetID = 1)
+```
+
+PMA:
+With PMA, ribosome biogenesis is activated along with rRNA processing, cytoking receptor binding and signalling receptor regulator activity. The gene ratios vary from 0.3 to 0.5 with counts of 50-100. Minimal pathways are suppressed with this LRA.
+
+IL15:
+With IL15, DNA-templated DNA replication, mitotic sister chromatid segregation and several other chromosome segregation pathways are enriched. gene ratios vary from 0.32 to 0.5 with counts ranging from 20-80 and again minimal suppressed pathways.
+
+Bryostatin:
+With Bryostatin, DNA-templated DNA replication is activated along with several chromatid segregation pathways. Similar generatios and counts are observed to the pathways enriched in Il15 with minimal suppressed pathways.
+
+Overall, the bubble plots show a range of pathways enriched with each LRA consistent with the GO enrichment terms. Although IL15 is known to have downstream effects on the IL2-STAT signalling pathways [6], only PMA/Ionomycin showed enrichment of signalling receptor activity pathways with Il15 enriched pathways mainly centered around chromosome remodelling and cell cycle pathways.
+
+The GSE plots show that cytokine activity is strongly and significantly enriched amongst genes upregulated by PMA/Ionomycin stimulation, regulation of chromosome segregation is strongly enriched in IL15 and mitotic sister chromatid segregation enriched in Bryostatin. The early peaks in the running enrichment score and the concentration of gene hits at the top of the ranked list indicate that these LRAs drive strong biological change through these pathways.
+
+# Results
+
+```{r fig1-global, fig.show='hold', fig.ncol=1, out.width='80%', fig.cap='Figure 1: Global transcriptomic analysis. A) PCA of top 500 variable genes. B) All differentially expressed genes heatmap. C) Top 50 DE genes heatmap.', message=FALSE, echo=FALSE}
+
+# A - PCA
+plotPCA(dst_rlog) +
+labs(color=NULL) +
+theme_bw()
+
+# B - All DEG heatmap
+pheatmap(rlog_dge, scale = "row", show_rownames = FALSE,
+         annotation_col = anno_col,
+         )
+
+# C - Top 50 heatmap
+pheatmap(mat_scaled, show_rownames = TRUE, fontsize_row = 7,
+         annotation_col = anno_col,
+         breaks = seq(-2, 2, length.out = 101),
+         border_color = NA,
+         main = "Top 50 DE Genes")
+```
+
+**PCA:**
+
+Principal components 1 and 2 each explained a modest proportion of the total variance (~21–24%), indicating that transcriptional variation is distributed across many genes rather than dominated by a single axis. This suggests a complex response in which multiple genes contribute moderate effects, rather than a small subset driving large-scale differences. Inter-replicate variability may also contribute to the relatively low variance explained by the first two components. Overall, this pattern is consistent with broadly distributed transcriptional changes induced by latency-reversing agents (LRAs).
+
+Despite the modest variance explained, samples clustered clearly by condition. PMA/ionomycin-treated samples formed a distinct cluster, separated from IL-15, bryostatin, and unstimulated samples, indicating a strong and widespread transcriptional response. This aligns with the known potent activating effects of PMA/ionomycin, which trigger broad signalling cascades and extensive gene expression changes.
+
+In contrast, IL-15 and bryostatin samples clustered more closely together, suggesting more similar and comparatively weaker transcriptional responses. This likely reflects more targeted mechanisms of action, resulting in smaller and more overlapping changes in gene expression compared to the broad activation induced by PMA/ionomycin.
+
+**Heatmaps:**
+
+Compared to unstimulated cells, PMA-treated samples show the most distinct gene expression profile when considering global patterns. However, when the analysis is restricted to the top 50 differentially expressed genes (ranked by adjusted p-value and visualised using z-scored rlog counts), the clustering structure becomes less defined. Aside from a clear separation of unstimulated samples, the latency-reversing agent (LRA) conditions (PMA/ionomycin, IL-15, and bryostatin) are more intermixed, suggesting that the strongest global differences are distributed across a broader set of genes rather than captured by only the top-ranked subset.
+
+The heatmap also highlights a small group of genes that are relatively highly expressed in unstimulated cells but downregulated following LRA treatment. These include TGFA, KLHL3, IL11RA, and LRRC37A8P. Functionally, TGFA encodes a growth factor involved in basal cell signalling [13], while IL11RA is part of the interleukin receptor family involved in cytokine responsiveness [14. Their reduced expression following stimulation may reflect a shift away from homeostatic signalling towards an activated transcriptional state.
+
+In contrast, several genes are consistently upregulated across LRA conditions, particularly cytokine-related genes such as IL13, IL5, IL10, and IL9, which are associated with immune activation and T cell effector functions. This supports the conclusion that LRAs induce activation of CD4+ T cells. Additionally, modest upregulation of cell cycle-associated genes such as CDC6, MCM10, RRM2, and GINS2 - which are involved in DNA replication initiation and progression - suggests that LRA treatment may promote entry into proliferative pathways, consistent with activation-induced clonal expansion.
+
+Interestingly, CASP9, a key initiator of the intrinsic apoptotic pathway, shows slight upregulation in some conditions. This may indicate that strong or prolonged activation induces cellular stress, triggering apoptotic signalling alongside activation.
+
+Overall, PMA/ionomycin appears to drive more distinct, gene-specific expression changes, whereas IL-15 and bryostatin produce broader more overlapping transcriptional responses. This suggests differences in the intensity and specificity of the signalling pathways activated by each LRA.
+
+```{r fig2-specific, fig.width=15, fig.height=6, fig.show='hold', fig.ncol=1, out.width='80%', fig.cap='Figure 2: Differential gene expression. A) Shrunk volcano plots. B) Top significant genes per condition. C) STAT5A and STAT5B normalised counts.', message=FALSE, echo=FALSE}
+
+# A - Shrunk volcanos
+vp_PMA_shrunk + vp_IL15_shrunk + vp_bryo_shrunk +
+    plot_layout(ncol = 3, guides = "collect") &
+    theme(legend.position = "bottom")
+
+# B - Top genes
+par(mfrow = c(1, 3))
+plotCounts(dds, gene = top_gene_PMA, normalized = TRUE,
+           xlab = "", main = paste0("PMA: ", top_gene_PMA),
+           cex = 3, cex.axis = 1.3, cex.lab = 1.4, cex.main = 1.5)
+
+plotCounts(dds, gene = top_gene_IL15, normalized = TRUE,
+           xlab = "", main = paste0("IL15: ", top_gene_IL15),
+           cex = 3, cex.axis = 1.3, cex.lab = 1.4, cex.main = 1.5)
+
+plotCounts(dds, gene = top_gene_bryo, normalized = TRUE,
+           xlab = "", main = paste0("Bryo: ", top_gene_bryo),
+           cex = 3, cex.axis = 1.3, cex.lab = 1.4, cex.main = 1.5)
+
+par(mfrow = c(1, 1))
+
+# C - STAT5
+par(mfrow = c(1, 2))
+plotCounts(dds, gene = "STAT5A", normalized = TRUE,
+           xlab = "", main = "STAT5A",
+           cex = 1.5, cex.axis = 1.3, cex.lab = 1.4, cex.main = 1.5)
+
+plotCounts(dds, gene = "STAT5B", normalized = TRUE,
+           xlab = "", main = "STAT5B",
+           cex = 1.5, cex.axis = 1.3, cex.lab = 1.4, cex.main = 1.5)
+
+par(mfrow = c(1, 1))
+```
+
+**Volcano Plots:**
+
+The shrunken volcano plots highlight key differentially expressed genes across each treatment relative to unstimulated cells, providing insight into the dominant transcriptional responses induced by each LRA.
+
+In PMA/ionomycin-treated samples, TNRC6B is among the most strongly altered genes. TNRC6B is involved in involved in post-transcriptional regulation, including mRNA decay, poly(A) tail shortening, and regulatory non-coding RNA–mediated gene silencing [7]. SLC39A14, a metal ion transporter responsible for zinc and manganese uptake, is also significantly upregulated, which may support increased metabolic and enzymatic activity during activation [8].
+
+In IL15-treated cells, prominent differentially expressed genes include IL2RA and RRM2. IL2RA encodes the alpha chain of the IL2 receptor (CD25), a well-established marker of T cell activation and proliferation [6]. RRM2, a subunit of ribonucleotide reductase, is essential for maintaining deoxyribonucleotide pools required for DNA synthesis and repair, further supporting the idea that IL15 promotes proliferative capacity in CD4+ T cells [10].
+
+Bryostatin-treated samples show a similar expression pattern to IL15, with shared upregulation of IL2RA and RRM2, indicating overlapping activation and proliferation pathways. In addition, Bryostatin uniquely shows altered expression of IL7R, which encodes the IL7 receptor, a key regulator of T cell survival  [11], homeostasis, and expansion. This suggests that Bryostatin may promote not only activation but also survival signalling pathways in CD4+ T cells.
+
+**Most significantly altered genes:**
+
+Across treatments, IL2RA is the most significantly upregulated gene in both IL15 and bryostatin conditions relative to unstimulated cells. IL2RA encodes the a-chain of the IL2 receptor (CD25), a key marker of T cell activation and a downstream target of JAK-STAT signalling, particularly involving STAT5 [6]. Its strong upregulation indicates robust activation and increased sensitivity to IL-2–mediated proliferative signalling.
+
+In contrast, the most significantly altered gene in PMA/ionomycin-treated cells is TNRC6B, which is involved in post-transcriptional regulation [7].
+Its prominent differential expression suggests that PMA/ionomycin not only drives transcriptional changes but may also strongly influence post-transcriptional regulatory mechanisms, contributing to the breadth of its effects.
+
+**STAT5A and STAT5B expression:**
+
+Analysis of STAT5A and STAT5B expression reveals distinct and somewhat unexpected patterns. STAT5A shows a modest increase in expression under PMA/ionomycin stimulation, while IL15 and bryostatin appear to have minimal effect. In contrast, STAT5B expression is reduced across all LRA conditions relative to unstimulated cells.
+
+This is notable given that IL15 is known to activate the JAK–STAT pathway, particularly STAT5 signalling. One possible explanation is the presence of negative feedback regulation: sustained or strong pathway activation may suppress STAT5B transcription to prevent excessive signalling. In this context, the observed decrease in STAT5B mRNA may not reflect reduced pathway activity, but rather a compensatory mechanism to maintain signalling homeostasis. These are suggested hypotheses for the observed results however further analysis would be useful to further understand the IL2-STAT5 relationship.
+
+Statistical testing supports a trend toward differential expression. A Kruskal - Wallis test identified a borderline significant difference in STAT5B expression across conditions (p = 0.05), while STAT5A showed higher expression in PMA but non-significantly (p = 0.075). Post-hoc pairwise comparisons did not reach significance after Benjamini–Hochberg correction, likely due to limited statistical power (n = 3 per group).
+
+Together, these results indicate that PMA/ionomycin, IL15, and bryostatin exert distinct effects on transcription in CD4⁺ effector memory T cells. PMA/ionomycin induces a strong and broad response, including effects on cytokine expression and post-transcriptional regulation, and clusters separately from the other conditions. In contrast, IL15 and bryostatin produce more similar transcriptional profiles, both prominently upregulating IL2RA and genes associated with activation and proliferation.
+
+This similarity is somewhat unexpected given their different upstream mechanisms - IL15 signals through the JAK–STAT pathway, whereas Bryostatin and PMA act via protein kinase C (PKC) activation. The convergence on shared downstream targets such as IL2RA suggests that distinct signalling pathways may converge on common transcriptional programs associated with T cell activation.
+
+# Discussion
+
+This analysis provides insight into the transcriptional effects of different latency-reversing agents (LRAs) in CD4⁺ effector memory T cells, but several limitations should be considered when interpreting the results.
+
+A key limitation is the small sample size of donor cells (n = 3 per condition), which reduces statistical power and increases susceptibility to inter-donor variability. In the context of HIV, where integration sites and transcriptional responses can vary substantially between individuals, this may lead to donor-specific differential expression patterns that are not broadly generalisable. Expanding the analysis to include additional samples would improve robustness and enable more confident identification of consistent transcriptional signatures.
+
+There are also technical considerations related to data processing and quality. While no major outlier samples were identified, unstimulated cells showed a higher proportion of intronic reads and variability in read mapping, the cause of which remains unclear. Additionally, two samples exhibited differing size factors during normalisation, which may have introduced bias into downstream differential expression analyses. These factors highlight the importance of careful normalisation and quality control, particularly in small datasets.
+
+Methodological constraints further limit the scope of this analysis. Latency was defined based on low-level HIV RNA detection (20 copies/ml), which may misclassify cells with low transcriptional activity as truly latent. The use of TruSeq poly(A)-selected libraries introduces a 3′ bias and preferentially captures highly expressed transcripts, potentially underrepresenting low-abundance or non-polyadenylated RNAs. Moreover, the use of short-read Illumina sequencing with relatively limited depth restricts the ability to detect HIV–host chimeric transcripts, which are important for understanding integration and transcriptional regulation. As a result, this aspect of HIV biology could not be explored in detail here.
+
+Differences in analytical approach also limit direct comparison with the original study. While this analysis focused on differential gene expression, the original work applied gene set enrichment analysis (GSEA) and sample-level enrichment analysis (SLEA) to identify pathway-level changes. These approaches capture coordinated changes across gene sets and may provide greater biological resolution, particularly for signalling pathways such as JAK–STAT. The absence of such analyses here may explain why certain pathway-level insights, including STAT5 signalling dynamics, remain unclear.
+
+Biologically, this study focused exclusively on effector memory T cells, which limits the generalisability of the findings to other CD4⁺ T cell subsets that may respond differently to LRAs. Expanding the analysis to include additional subsets would provide a more comprehensive view of latency reversal mechanisms. Additionally, measured HIV msRNA levels were not integrated in this analysis. This means we cannot account for differences in viral transcription activity between conditions. As a result, variation in baseline transcription in unstimulated cells, or differences in the strength of activation induced by LRAs, could have influenced the observed results and potentially confounded the interpretation.
+
+Future work could address several of these limitations. Increasing sample size and including additional T cell subsets would improve statistical power and biological relevance. Further investigation of genes upstream and downstream of IL2RA, particularly within the JAK–STAT pathway, may help clarify the observed disconnect between IL2RA upregulation and STAT5B expression. Applying pathway-level methods such as SLEA or GSEA could provide greater insight into coordinated signalling changes that are not captured by gene-level analysis alone.
+
+In addition, comparing these results with other latency-reversing strategies, such as Romidepsin or CD3/CD28 stimulation (if data are available), would help contextualise the observed transcriptional responses. Integration with long-read sequencing data, such as PacBio datasets, could also enable detection of HIV–host chimeric transcripts and isoform-level changes that are not accessible with short-read sequencing. Together, these approaches would provide a more comprehensive understanding of the mechanisms underlying latency reversal and T cell activation.
+
+# Github
+
+The Github Repo below contains the scripts used for alignment, qorts and featureCounts as well as the R code used here for DESeq2 DGE analysis and plotting.
+
+https://github.com/ssanjhna/project-HIV-CD4-RNA-seq
+
+# Table of Data in Github
+
+| Data File Name | Description |
+|----------------|-------------|
+| ENA_metadata.tsv | Contains accession IDs (run_accession, experiment_accession), sample details (T cell type, condition, species, experiment_title), and fastq_ftp download links. |
+| featureCounts_genes_all_samples.zip | Output of featurecountsall.sh. Summary file includes alignment stats; all_samples.txt contains gene-level counts. |
+| DESeq2results_AllConditions.zip | Tables of significantly different genes (adj p < 0.05) for each treatment vs unstimulated, with annotations and statistics. |
+| GO_txt.zip | Gene Ontology enrichment results for differentially expressed genes (see R script for generation). |
+# Citations
+
+[1] Tioka, L., Diez, R.C., Sönnerborg, A. and van de Klundert, M.A.A. (2025). Latency Reversing Agents and the Road to a HIV Cure. Pathogens, [online] 14(3), p.232. doi:https://doi.org/10.3390/pathogens14030232.
+
+[2] Kulpa, D.A., Talla, A., Brehm, J.H., Ribeiro, S.P., Yuan, S., Bebin-Blackwell, A.-G., Miller, M., Barnard, R., Deeks, S.G., Hazuda, D., Chomont, N. and Sékaly, R.-P. (2019). Differentiation into an Effector Memory Phenotype Potentiates HIV-1 Latency Reversal in CD4+T Cells. Journal of Virology, 93(24). doi:https://doi.org/10.1128/jvi.00969-19.
+
+[3] Spina, C.A., Anderson, J.L., Archin, N.M., Bosque, A., Jonathan Cheung-Wai Chan, Famiglietti, M., Greene, W.C., Angela, Lewin, S.R., Margolis, D.J., Mau, M.J., Ruelas, D.S., Saleh, S., Shirakawa, K., Siliciano, R.F., Akul Singhania, Soto, P., Terry, V.H., Verdin, E. and Woelk, C.H. (2013). An In-Depth Comparison of Latent HIV-1 Reactivation in Multiple Cell Model Systems and Resting CD4+ T Cells from Aviremic Patients. PLOS Pathogens, 9(12), pp.e1003834–e1003834. doi:https://doi.org/10.1371/journal.ppat.1003834.
+
+[4] Howard, J.N. and Bosque, A. (2023). IL-15 and N-803 for HIV Cure Approaches. Viruses, [online] 15(9), p.1912. doi:https://doi.org/10.3390/v15091912.
+
+[5] Reeder, J.E., Kwak, Y.-T., McNamara, R.P., Forst, C.V. and Iván D'Orso (2015). HIV Tat controls RNA Polymerase II and the epigenetic landscape to transcriptionally reprogram target immune cells. eLife, [online] 4. doi:https://doi.org/10.7554/elife.08955.
+
+[6] Mahmud, S.A., Manlove, L.S. and Farrar, M.A. (2013). Interleukin-2 and STAT5 in regulatory T cell development and function. JAK-STAT, [online] 2(1), p.e23154. doi:https://doi.org/10.4161/jkst.23154.
+
+[7] https://www.genecards.org/cgi-bin/carddisp.pl?gene=TNRC6B
+
+[8]https://www.genecards.org/cgi-bin/carddisp.pl?gene=SLC39A14
+
+[9] Dimitrije Stanković, Tain, L.S. and Mirka Uhlirova (2024). Xrp1 governs the stress response program to spliceosome dysfunction. Nucleic Acids Research, 52(5), pp.2093–2111. doi:https://doi.org/10.1093/nar/gkae055.
+
+[10] https://www.genecards.org/cgi-bin/carddisp.pl?gene=RRM2
+
+[11] https://www.genecards.org/cgi-bin/carddisp.pl?gene=IL7R
+
+[12] https://www.genecards.org/cgi-bin/carddisp.pl?gene=CASP9
+
+[13] https://www.genecards.org/cgi-bin/carddisp.pl?gene=TGFA
+
+[14] https://www.genecards.org/cgi-bin/carddisp.pl?gene=IL11RA
